@@ -111,9 +111,9 @@ train_control <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
 randomForest <- train_Model("rf", train_control)
 xgbTree <- train_Model("xgbTree", train_control)  
 
-# let's look at the results
-validate_Model(randomForest)
-validate_Model(xgbTree)
+# let's look at the results: error rate in % on the validation set
+validate_Model(randomForest)*100
+validate_Model(xgbTree)*100
 ```
 
 Random forest is faster and more accurate in this case, so this is the model I used for testing

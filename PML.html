@@ -254,6 +254,8 @@ train_control &lt;- trainControl(method = &quot;cv&quot;, number = 2, allowParal
 
 models &lt;- c(&quot;treebag&quot;,&quot;gbm&quot;,&quot;rf&quot;,&quot;knn&quot;,&quot;lvq&quot;,&quot;svmRadial&quot;,&quot;xgbTree&quot;,&quot;nnet&quot;,&quot;avNNet&quot;)
 fits &lt;- lapply(models, function(x) {train_Model(x,train_control)})
+
+# looking at the prediction accuracy on the validation set
 accuracies &lt;- sapply(fits, function(x) {1- validate_Model(x)})
 results &lt;- as.data.frame(cbind(models,accuracy = round(as.numeric(accuracies*100),digits = 2),
                                error = round(100- as.numeric(accuracies*100),digits = 2)))</code></pre>
@@ -272,10 +274,52 @@ results &lt;- as.data.frame(cbind(models,accuracy = round(as.numeric(accuracies*
 ## 8      nnet    42.77 57.23
 ## 9    avNNet     30.3  69.7</code></pre>
 </div>
-<div id="conclusion" class="section level2">
-<h2>Conclusion</h2>
-<p>Here the best models are:</p>
-<p>their computation time is:</p>
+<div id="select-the-two-most-promising-models-random-forest-and-extreme-gradient-boosting" class="section level2">
+<h2>Select the two most promising models: random forest and extreme gradient boosting</h2>
+<pre class="r"><code># now that we have selected two models I increase the cross validation number
+train_control &lt;- trainControl(method = &quot;cv&quot;, number = 5, allowParallel = TRUE)
+
+# I train two models, duration of computation in minutes as an output here
+randomForest &lt;- train_Model(&quot;rf&quot;, train_control)</code></pre>
+<pre><code>## [1] 16.13727</code></pre>
+<pre class="r"><code>xgbTree &lt;- train_Model(&quot;xgbTree&quot;, train_control)  </code></pre>
+<pre><code>## [1] 19.01698</code></pre>
+<pre class="r"><code># let's look at the results: error rate in % on the validation set
+validate_Model(randomForest)*100</code></pre>
+<pre><code>## [1] 0.5437553</code></pre>
+<pre class="r"><code>validate_Model(xgbTree)*100</code></pre>
+<pre><code>## [1] 0.7986406</code></pre>
+<p>Random forest is faster and more accurate in this case, so this is the model I used for testing</p>
+</div>
+<div id="appendix---a-look-at-the-variable-importance" class="section level2">
+<h2>appendix - a look at the variable importance</h2>
+<pre class="r"><code>varImp(randomForest, scale=FALSE) </code></pre>
+<pre><code>## rf variable importance
+## 
+##   only 20 most important variables shown (out of 39)
+## 
+##                      Overall
+## yaw_belt              1216.6
+## pitch_forearm         1008.9
+## magnet_dumbbell_z      826.7
+## magnet_dumbbell_y      643.9
+## roll_forearm           564.1
+## magnet_belt_y          549.4
+## magnet_belt_z          397.7
+## gyros_belt_z           358.3
+## accel_dumbbell_y       351.8
+## roll_dumbbell          339.1
+## magnet_dumbbell_x      317.0
+## total_accel_dumbbell   289.6
+## magnet_belt_x          276.2
+## accel_forearm_x        271.0
+## roll_arm               256.7
+## accel_forearm_z        253.1
+## magnet_forearm_z       236.0
+## yaw_dumbbell           235.2
+## yaw_arm                216.2
+## total_accel_belt       200.3</code></pre>
+<p>yaw_belt is the most important variable</p>
 </div>
 
 

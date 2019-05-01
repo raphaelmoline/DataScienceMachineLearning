@@ -1,3 +1,4 @@
+setwd("/Users/manonbreuvart/Documents/R studio/DataScienceMachineLearning/")
 library(caret); library(dplyr)
 
 data <- read.csv("pml-training.csv",header = TRUE, stringsAsFactors = FALSE)
@@ -16,35 +17,66 @@ correlationMatrix <- cor(data[,1:52])
 highcorrel <- findCorrelation(correlationMatrix, cutoff=.8)
 data <- data[,-highcorrel]
 
-## separate training / validation and testing // now using validation==testing
+## load and process the testing data
+testing <- read.csv("pml-testing.csv",header = TRUE, stringsAsFactors = FALSE)
+testing <- testing[,toKeep]
+testing <- testing[,-c(1:7)]
+testing <- testing[,-highcorrel]
+
+## separate training / validation
 set.seed(1)
 inTrain <- createDataPartition(data$classe, p = .7, list = FALSE)
 validation <- data[-inTrain, ]
 training <- data[inTrain,]
 
+
+
 ## set up parallel computing for faster compute
 library(doParallel); library(parallel)
-cluster <- makeCluster(detectCores() -1)
-registerDoParallel(cluster)
+
 
 train_control <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
 
-testModel <- function(model, tc) {
+train_Model <- function(model, tc) {
     set.seed(123)
+    cluster <- makeCluster(detectCores() -1)
+    registerDoParallel(cluster)
     start_time <- Sys.time()
     fit <- train(classe ~ ., data = training, method = model, metric = "Accuracy", trControl = tc)
-    print(Sys.time() - start_time)
-    confM <- table(predict(fit,newdata=validation),validation$classe)
-    print((sum(confM )-sum(diag(confM )))/sum(confM))
+    duration <- as.numeric(Sys.time() - start_time)
+    print(duration)
+    stopCluster(cluster)
+    registerDoSEQ()
+    return(fit)
 }
 
-treebag <- testModel("treebag", train_control)
-gbm <- testModel("gbm", train_control)
-randomForest <- testModel("rf", train_control)
-knn <- testModel("knn", train_control)
-lvq <- testModel("lvq", train_control)
-svmRadial <- testModel("svmRadial", train_control)
-    
+validate_Model <- function(model){
+    confM <- table(predict(model,newdata=validation),validation$classe)
+    return((sum(confM )-sum(diag(confM )))/sum(confM))
+}
+
+train_control <- trainControl(method = "cv", number = 2, allowParallel = TRUE)
+models <- c("treebag","gbm","rf","knn","lvq","svmRadial","xgbTree","nnet","avNNet")
+models <- c("treebag","gbm")
+
+fits <- lapply(models, function(x) {train_Model(x,train_control)})
+accuracies <- sapply(fits, function(x) {1- validate_Model(x)})
+results <- as.data.frame(cbind(models,accuracy = round(as.numeric(accuracies*100),digits = 2),
+                               error = round(100- as.numeric(accuracies*100),digits = 2)))
+arrange(results, desc(accuracy))
+
+train_control <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+
+randomForest <- train_Model("rf", train_control)
+xgbTree <- train_Model("xgbTree", train_control)  
+
+
+validate_Model(randomForest)*100
+validate_Model(xgbTree)*100
+
+randomForestImp <- varImp(randomForest, scale=FALSE) 
+
+
 
 #adaboost
 start_time <- Sys.time()
@@ -57,8 +89,7 @@ tb <- table(ada.validation.predict, validation$classe)
 tb <- table(ada.validation.predict, validation$classe)
 (sum(tb)-sum(diag(tb)))/sum(tb)
 
-stopCluster(cluster)
-registerDoSEQ()
+
 
 consensus <- cbind(as.data.frame(gbm.validation.predict),as.data.frame(treebag.validation.predict),as.data.frame(randomForest.validation.predict))
 consensus <- tbl_df(consensus)

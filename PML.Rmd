@@ -1,0 +1,127 @@
+---
+title: "Classification of physical exercises"
+author: "Raphael Moline"
+date: "28/04/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret) ; library(dplyr)
+library(doParallel); library(parallel)
+```
+
+## Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, my goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+Different methods have been tried and results are compared below.
+Libraries caret,dplyr, doParallel and parallel are loaded in the background.
+
+
+## loading and processing the data
+
+```{r }
+data <- read.csv("pml-training.csv",header = TRUE, stringsAsFactors = FALSE)
+
+# A look at the data will show that rows where 'new_window' is 'no' has lots of NA or empty columns
+toKeep <- (apply(data[data$new_window=="no",], 2, function(x) {mean(!is.na(x) && !(x==""))}) ==1)
+data <- data[,toKeep]
+
+## removing data that does not seem meaningful / that I won't use: row number, timestamps and window, user name
+data <- data[,-c(1:7)]
+
+# factoring the classification data
+data$classe <- as.factor(data$classe)
+
+# reduction of features by removing highly correlated variables
+correlationMatrix <- cor(data[,1:52])
+highcorrel <- findCorrelation(correlationMatrix, cutoff=.8)
+data <- data[,-highcorrel]
+
+#create training and validation sets
+set.seed(1)
+inTrain <- createDataPartition(data$classe, p = .7, list = FALSE)
+validation <- data[-inTrain, ]
+training <- data[inTrain,]
+
+```
+
+
+## define functions to run and validate the models
+
+```{r }
+# train the model using parallel compute and print the time taken
+train_Model <- function(model, tc) {
+    set.seed(123)
+    cluster <- makeCluster(detectCores() -1)
+    registerDoParallel(cluster)
+    start_time <- Sys.time()
+    fit <- train(classe ~ ., data = training, method = model, metric = "Accuracy", trControl = tc)
+    duration <- as.numeric(Sys.time() - start_time)
+    print(duration)
+    stopCluster(cluster)
+    registerDoSEQ()
+    return(fit)
+}
+
+# give the accuracy of the prediction
+validate_Model <- function(model){
+    confM <- table(predict(model,newdata=validation),validation$classe)
+    return((sum(confM )-sum(diag(confM )))/sum(confM))
+}
+
+```
+
+## run for a list of models to try
+
+```{r, results = 'hide'}
+# list of models that will be tested
+models <- c("treebag","gbm")
+
+# for now crossvalidation cv = 2 for quick runs
+train_control <- trainControl(method = "cv", number = 2, allowParallel = TRUE)
+
+models <- c("treebag","gbm","rf","knn","lvq","svmRadial","xgbTree","nnet","avNNet")
+fits <- lapply(models, function(x) {train_Model(x,train_control)})
+
+# looking at the prediction accuracy on the validation set
+accuracies <- sapply(fits, function(x) {1- validate_Model(x)})
+results <- as.data.frame(cbind(models,accuracy = round(as.numeric(accuracies*100),digits = 2),
+                               error = round(100- as.numeric(accuracies*100),digits = 2)))
+
+```
+
+
+## Look at the results
+```{r}
+arrange(results, desc(accuracy))
+```
+
+
+
+## Select the two most promising models: random forest and extreme gradient boosting
+```{r}
+# now that we have selected two models I increase the cross validation number
+train_control <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+
+# I train two models, duration of computation in minutes as an output here
+randomForest <- train_Model("rf", train_control)
+xgbTree <- train_Model("xgbTree", train_control)  
+
+# let's look at the results
+validate_Model(randomForest)
+validate_Model(xgbTree)
+```
+
+Random forest is faster and more accurate in this case, so this is the model I used for testing
+
+## appendix - a look at the variable importance
+```{r}
+varImp(randomForest, scale=FALSE) 
+```
+
+yaw_belt is the most important variable
+
